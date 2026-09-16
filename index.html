@@ -206,11 +206,20 @@
   .note-card p + p{ margin-top:10px; }
 
   footer{ margin-top:60px; padding-top:20px; border-top:1px solid var(--panel-border); color:var(--ink-faint); font-size:12.5px; }
+
+  /* ---------- Combined graph panel (DOS x Fermi overlaid) ---------- */
+  .combined-panel{ grid-column: 1 / -1; margin-top:16px; }
+  .combined-panel svg{ width:100%; height:auto; display:block; touch-action:none; }
+  .combined-legend{ display:flex; flex-wrap:wrap; gap:14px; margin-top:10px; font-size:12px; color:var(--ink-muted); }
+  .combined-legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .combined-legend i{ width:12px; height:2px; display:inline-block; }
+  .combined-legend i.fillbox{ height:10px; border-radius:2px; }
+
 </style>
 </head>
 <body>
-<div class="page">
 
+<div class="page">
   <header class="hero">
     <div class="kicker">Semiconductor energy bands, worked interactively</div>
     <h1>Crossing the gap</h1>
@@ -279,6 +288,20 @@
             <div class="panel">
               <h3>Carriers, g(E)·f(E)</h3>
               <svg id="svgDensity" viewBox="0 0 260 420" preserveAspectRatio="xMidYMid meet"></svg>
+            </div>
+          </div>
+
+          <div class="panel-row">
+            <div class="panel combined-panel">
+              <h3>Combined view — g(E), f(E) and g(E)·f(E) on one graph</h3>
+              <svg id="svgCombined" viewBox="0 0 780 380" preserveAspectRatio="xMidYMid meet"></svg>
+              <div class="combined-legend">
+                <span><i style="background:var(--electron)"></i> g<sub>c</sub>(E) outline</span>
+                <span><i style="background:var(--hole)"></i> g<sub>v</sub>(E) outline</span>
+                <span><i style="background:var(--fermi); height:2px; border-top:2px dashed var(--fermi); background:transparent;"></i> f<sub>e</sub>(E) / f<sub>h</sub>(E)</span>
+                <span><i class="fillbox" style="background:var(--electron); opacity:.55;"></i> n(E)=g<sub>c</sub>·f<sub>e</sub></span>
+                <span><i class="fillbox" style="background:var(--hole); opacity:.55;"></i> p(E)=g<sub>v</sub>·f<sub>h</sub></span>
+              </div>
             </div>
           </div>
 
@@ -446,8 +469,11 @@
   const dopingBtns = document.querySelectorAll('.doping-btn');
 
   const svgDOS = el('svgDOS'), svgFermi = el('svgFermi'), svgDensity = el('svgDensity');
+  const svgCombined = el('svgCombined');
   const W=260, H=420, M={top:14,right:14,bottom:26,left:14};
   const plotH = H-M.top-M.bottom, plotW = W-M.left-M.right;
+  const WC=780, HC=380, MC={top:14,right:20,bottom:28,left:20};
+  const plotHC = HC-MC.top-MC.bottom, plotWC = WC-MC.left-MC.right;
 
   // ---------- rendering ----------
   function sample(fn, a, b, n){
@@ -521,6 +547,42 @@
     if(hPts) dSVG += `<path d="${pathFromPts(hPts, yOf, xD, M.left)}" fill="var(--hole)" fill-opacity="0.55" stroke="var(--hole)" stroke-width="1.6"/>`;
     dSVG += efHandle(p, yOf, false);
     svgDensity.innerHTML = dSVG;
+
+    // ================= PANEL 4: combined overlay (DOS × Fermi × carriers, one graph) =================
+    const xC = E => MC.left + (E-Emin)/(Emax-Emin)*plotWC;
+    const yDOSc = v => MC.top + plotHC - (v/dosMax)*plotHC*0.92;
+    const yFc = v => MC.top + plotHC - v*plotHC*0.92;
+    const yDensc = v => MC.top + plotHC - (v/densMax)*plotHC*0.92;
+    const baseYc = MC.top + plotHC;
+    function strokeC(pts, yFn){
+      return pts.map(([E,v],i)=> (i===0?'M':'L') + ' ' + xC(E).toFixed(1) + ' ' + yFn(v).toFixed(1)).join(' ');
+    }
+    function fillC(pts, yFn){
+      let d = `M ${xC(pts[0][0]).toFixed(1)} ${baseYc.toFixed(1)} `;
+      pts.forEach(([E,v])=>{ d += `L ${xC(E).toFixed(1)} ${yFn(v).toFixed(1)} `; });
+      d += `L ${xC(pts[pts.length-1][0]).toFixed(1)} ${baseYc.toFixed(1)} Z`;
+      return d;
+    }
+    let cSVG = '';
+    cSVG += `<line x1="${MC.left}" y1="${baseYc}" x2="${WC-MC.right}" y2="${baseYc}" stroke="var(--panel-border)" stroke-width="1"/>`;
+    if(p.mode!=='metal'){
+      cSVG += `<line class="ref-line" x1="${xC(p.Ec).toFixed(1)}" y1="${MC.top}" x2="${xC(p.Ec).toFixed(1)}" y2="${baseYc}"/>`;
+      cSVG += `<text class="axis-label" x="${(xC(p.Ec)+4).toFixed(1)}" y="${MC.top+10}">Ec</text>`;
+      cSVG += `<line class="ref-line" x1="${xC(p.Ev).toFixed(1)}" y1="${MC.top}" x2="${xC(p.Ev).toFixed(1)}" y2="${baseYc}"/>`;
+      cSVG += `<text class="axis-label" x="${(xC(p.Ev)-20).toFixed(1)}" y="${MC.top+10}">Ev</text>`;
+    } else {
+      cSVG += `<line class="ref-line" x1="${xC(p.bandBottom).toFixed(1)}" y1="${MC.top}" x2="${xC(p.bandBottom).toFixed(1)}" y2="${baseYc}"/>`;
+      cSVG += `<text class="axis-label" x="${(xC(p.bandBottom)+4).toFixed(1)}" y="${MC.top+10}">band edge</text>`;
+    }
+    cSVG += `<line x1="${xC(p.Ef).toFixed(1)}" y1="${MC.top}" x2="${xC(p.Ef).toFixed(1)}" y2="${baseYc}" stroke="var(--ef-line)" stroke-width="1.4" stroke-dasharray="5,3"/>`;
+    cSVG += `<text class="axis-label" x="${(xC(p.Ef)+4).toFixed(1)}" y="${MC.top+22}" style="fill:var(--ef-line)">EF</text>`;
+    cSVG += `<path d="${fillC(nPts, yDensc)}" fill="var(--electron)" fill-opacity="0.5" stroke="none"/>`;
+    if(hPts) cSVG += `<path d="${fillC(hPts, yDensc)}" fill="var(--hole)" fill-opacity="0.5" stroke="none"/>`;
+    cSVG += `<path d="${strokeC(dosPts, yDOSc)}" fill="none" stroke="var(--electron)" stroke-width="1.6"/>`;
+    if(dosPtsVB) cSVG += `<path d="${strokeC(dosPtsVB, yDOSc)}" fill="none" stroke="var(--hole)" stroke-width="1.6"/>`;
+    cSVG += `<path d="${strokeC(fermiPts, yFc)}" fill="none" stroke="var(--fermi)" stroke-width="1.8" stroke-dasharray="6,3"/>`;
+    cSVG += `<text class="axis-label" x="${WC-MC.right-30}" y="${HC-6}">E →</text>`;
+    svgCombined.innerHTML = cSVG;
 
     // ---------- readouts ----------
     nValue.textContent = fmtSci(dens.n);
